@@ -1,2 +1,3 @@
-# helm-charts
+# HELM-CHARTS
+
 Helm repository
