@@ -1,3 +1,7 @@
-# HELM-CHARTS
+# HELM-CHARTS REPOSITORY
 
-Helm repository
+Usage:
+
+```bash
+helm repo add <name> https://https://julien-fruteau.github.io/helm-charts
+```
