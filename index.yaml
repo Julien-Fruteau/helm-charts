@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  helm-secret:
+  - apiVersion: v2
+    created: "2023-11-06T03:56:14.039127618Z"
+    description: A Helm chart for Kubernetes
+    digest: 7369a7e06f8c29a40eec90892fd3f3c3d2b4adc07144f9efcd4347e47526d9e2
+    maintainers:
+    - name: Julien-Fruteau
+    name: helm-secret
+    urls:
+    - https://github.com/Julien-Fruteau/helm-charts/releases/download/helm-secret-0.1.0/helm-secret-0.1.0.tgz
+    version: 0.1.0
+generated: "2023-11-06T03:56:14.039133119Z"
