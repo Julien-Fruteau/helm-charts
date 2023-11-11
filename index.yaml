@@ -11,4 +11,31 @@ entries:
     urls:
     - https://github.com/Julien-Fruteau/helm-charts/releases/download/helm-secret-0.1.0/helm-secret-0.1.0.tgz
     version: 0.1.0
-generated: "2023-11-06T03:56:14.039133119Z"
+  postgresql:
+  - apiVersion: v2
+    appVersion: 16.0.0
+    created: "2023-11-11T11:49:30.003615283Z"
+    dependencies:
+    - name: common
+      repository: oci://registry-1.docker.io/bitnamicharts
+      tags:
+      - bitnami-common
+      version: 2.x.x
+    description: PostgreSQL (Postgres) is an open source object-relational database
+      known for reliability and data integrity. ACID-compliant, it supports foreign
+      keys, joins, views, triggers and stored procedures.
+    digest: 0c3c8cdc86e982d49db8155f987e10b7e38f4fc92632bf7a62f4068307bab8d3
+    keywords:
+    - postgresql
+    - postgres
+    - database
+    - sql
+    - replication
+    - cluster
+    maintainers:
+    - name: Julien-Fruteau
+    name: postgresql
+    urls:
+    - https://github.com/Julien-Fruteau/helm-charts/releases/download/postgresql-13.1.5/postgresql-13.1.5.tgz
+    version: 13.1.5
+generated: "2023-11-11T11:49:30.003621083Z"
