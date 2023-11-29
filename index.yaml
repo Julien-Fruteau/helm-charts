@@ -2,6 +2,16 @@ apiVersion: v1
 entries:
   helm-secret:
   - apiVersion: v2
+    created: "2023-11-29T05:08:29.934705199Z"
+    description: A Helm chart for Kubernetes
+    digest: 9cf5c776a2f435a11472d7c16c292e8e39b9498718270065ed5fe6797be79aa4
+    maintainers:
+    - name: Julien-Fruteau
+    name: helm-secret
+    urls:
+    - https://github.com/Julien-Fruteau/helm-charts/releases/download/helm-secret-0.1.1/helm-secret-0.1.1.tgz
+    version: 0.1.1
+  - apiVersion: v2
     created: "2023-11-06T03:56:14.039127618Z"
     description: A Helm chart for Kubernetes
     digest: 7369a7e06f8c29a40eec90892fd3f3c3d2b4adc07144f9efcd4347e47526d9e2
@@ -12,6 +22,32 @@ entries:
     - https://github.com/Julien-Fruteau/helm-charts/releases/download/helm-secret-0.1.0/helm-secret-0.1.0.tgz
     version: 0.1.0
   postgresql:
+  - apiVersion: v2
+    appVersion: 16.0.0
+    created: "2023-11-29T05:08:30.083246089Z"
+    dependencies:
+    - name: common
+      repository: oci://registry-1.docker.io/bitnamicharts
+      tags:
+      - bitnami-common
+      version: 2.x.x
+    description: PostgreSQL (Postgres) is an open source object-relational database
+      known for reliability and data integrity. ACID-compliant, it supports foreign
+      keys, joins, views, triggers and stored procedures.
+    digest: cf255452902f36e4e42d7cf84591938c66c99f757f2e584841ff7fb5ff889757
+    keywords:
+    - postgresql
+    - postgres
+    - database
+    - sql
+    - replication
+    - cluster
+    maintainers:
+    - name: Julien-Fruteau
+    name: postgresql
+    urls:
+    - https://github.com/Julien-Fruteau/helm-charts/releases/download/postgresql-13.1.6/postgresql-13.1.6.tgz
+    version: 13.1.6
   - apiVersion: v2
     appVersion: 16.0.0
     created: "2023-11-11T11:49:30.003615283Z"
@@ -38,4 +74,4 @@ entries:
     urls:
     - https://github.com/Julien-Fruteau/helm-charts/releases/download/postgresql-13.1.5/postgresql-13.1.5.tgz
     version: 13.1.5
-generated: "2023-11-11T11:49:30.003621083Z"
+generated: "2023-11-29T05:08:30.083260767Z"
