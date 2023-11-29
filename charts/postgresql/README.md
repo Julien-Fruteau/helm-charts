@@ -1,6 +1,6 @@
 # postgresql
 
-![Version: 13.1.5](https://img.shields.io/badge/Version-13.1.5-informational?style=flat-square) ![AppVersion: 16.0.0](https://img.shields.io/badge/AppVersion-16.0.0-informational?style=flat-square)
+![Version: 13.1.6](https://img.shields.io/badge/Version-13.1.6-informational?style=flat-square) ![AppVersion: 16.0.0](https://img.shields.io/badge/AppVersion-16.0.0-informational?style=flat-square)
 
 PostgreSQL (Postgres) is an open source object-relational database known for reliability and data integrity. ACID-compliant, it supports foreign keys, joins, views, triggers and stored procedures.
 
