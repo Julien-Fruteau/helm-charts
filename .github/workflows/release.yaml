@@ -1,15 +1,19 @@
 name: Release Charts
 
+# create a new release only if Chart.yaml has been updated
+
 on:
   push:
     branches:
       - main
     paths:
-      - 'charts/**'
+      # - 'charts/**'
+      - "charts/**/Chart.yaml"
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    needs: bump-chart-version
     permissions:
       contents: write
     steps:
