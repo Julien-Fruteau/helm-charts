@@ -124,8 +124,8 @@ jobs:
         if: env.GIT_DIFF
         id: chart-list
         run: |
-          listChartDir=$(echo "env.GIT_DIFF" | cut -d/ -f2 | sort -u | xargs | jq -Rc 'split(" ")')
-          chartFiles=$(echo "env.GIT_DIFF" | cut -d/ -f2 | sort -u | xargs -I {} echo charts/{}/Chart.yaml)
+          listChartDir=$(echo "env.GIT_DIFF" | grep charts | cut -d/ -f2 | sort -u | xargs | jq -Rc 'split(" ")')
+          chartFiles=$(echo "env.GIT_DIFF" | grep charts | cut -d/ -f2 | sort -u | xargs -I {} echo charts/{}/Chart.yaml)
           list=$(yq -N .name ${chartFiles} | xargs | jq -Rc 'split(" ")')
           echo "chart list: ${list}"
           echo "list=${list}" >> $GITHUB_OUTPUT
