@@ -1,0 +1,359 @@
+name: Prepare Release
+
+# This workflow is meant to be executed AFTER a PR has been closed and BEFORE the chart release workflow
+
+# if chart.yaml has not been modified there is a possible version bump to analyse and commit
+# prior calling chart-releaser (which uses Chart.yaml version)
+
+# process :
+
+# get the list of charts modified and to release (git diff)
+
+# compute the release type major, minor or patch
+# from all commits since the latest release/tag
+# this step is look at commit scope matching chart name
+
+# get the new chart version according to release type
+
+# for each chart, update Chart.yaml version, single commit new version(s) and push
+
+
+# limitation:
+
+# in case multiple charts are updated, if chart A has been fixed and another chart B a has new feat
+# both charts would end up having a minor version upgrade, whereas chart A should only be patched
+# How to mitigate :
+#  - do 1 PR for each chart
+#  OR
+#  - include the chart name in conventional commit scope "type(<scope>): message" ; ex
+#     - "fix(postgresql): default resources limit"
+#     - "feat(spring-boot): add liveness and readiness support"
+
+#  NB: breaking changes are expected on git message footer
+#   if you are familiar with "type(<scope>)!: message" with an exclamation mark to trigger
+#   a breaking change, this is not supported (currently default angular conventional commit parser)
+
+# NOTES:
+# * This workflow is using : https://github.com/marketplace/actions/matrix-outputs-write
+# *   to fetch outputs from matrix jobs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+      - '!charts/**/Chart.yaml'
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Get the release type (patch, minor, major)
+  # how: parsing conventional commits from latest release (tag).
+  release-type:
+    runs-on: ubuntu-latest
+    outputs:
+      type: ${{ steps.release-type.outputs.type }}
+      commits: ${{ steps.commit-parser.outputs.parsed }}
+    steps:
+      - name: 📋 Get Commits Since Last Release
+        id: changes
+        run: |
+          tag=$(git describe --tags --abbrev=0 --always)
+          echo "log=$(git log ${tag}..${{ github.sha }} --format="%B%n%n"" >> $GITHUB_OUTPUT
+      # echo "last-tag=$(git describe --tags --abbrev=0 --always)" >> $GITHUB_OUTPUT
+      - name: 📣 Output Collected Data
+        run: |
+          echo "Changes since ${{ steps.changes.outputs.last-tag }}:"
+          echo "${{ steps.changes.outputs.log }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install Dependencies
+        run: npm install
+      - name: Commit Parser
+        id: commit-parser
+        run: |
+          parsed=$(echo "${{ steps.changes.outputs.log }}" | npx conventional-commits-parser)
+          echo "parsed=${parsed}" >> $GITHUB_OUTPUT
+      # filtered=$(echo $parsed | jq 'map(select(.scope == "${{ matrix.chart }}" or .scope == null))')
+      # echo "filtered=${filtered}" >> $GITHUB_OUTPUT
+
+      # https://github.com/angular/angular/blob/main/CONTRIBUTING.md#commit
+      # https://www.conventionalcommits.org/en/v1.0.0/
+      # with default angular conventional commits, BREAKING CHANGE must be in footer
+      - name: Release Type
+        id: release-type
+        run: |
+          type=""
+          echo "${{ steps.commit-parser.outputs.parsed }}" | jq '.[] | .type' | grep fix && type=patch
+          echo "${{ steps.commit-parser.outputs.parsed }}" | jq '.[] | .type' | grep feat && type=minor
+          echo "${{ steps.commit-parser.outputs.parsed }}" | jq '.[] | .footer' | grep 'BREAKING CHANGE' && type=major
+          echo "type=${type}" >> $GITHUB_OUTPUT
+      - name: Which Release Type
+        run: |
+          if [[ "${{ steps.release-type.outputs.type }}" == "" ]]; then
+            echo "No release to make"
+          else
+            echo "New release type: ${{ steps.release-type.outputs.type }}"
+          fi
+
+  # Get the charts modified since previous release
+  charts:
+    runs-on: ubuntu-latest
+    if: needs.release-type.outputs.type != ''
+    needs: [release-type]
+    outputs:
+      list: ${{ steps.chart-list.outputs.list }}
+    steps:
+      - name: 🛎 Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Git Diff
+        id: git-diff
+        uses: technote-space/get-diff-action@v6
+        with:
+          DIFF_FILTER: AMR
+          PATTERNS: |
+            charts/**
+      - name: 'Setup yq'
+        uses: dcarbone/install-yq-action@v1.1.1
+      - name: Charts Diff
+        if: env.GIT_DIFF
+        id: chart-list
+        run: |
+          listChartDir=$(echo "env.GIT_DIFF" | grep charts | cut -d/ -f2 | sort -u | xargs | jq -Rc 'split(" ")')
+          chartFiles=$(echo "env.GIT_DIFF" | grep charts | cut -d/ -f2 | sort -u | xargs -I {} echo charts/{}/Chart.yaml)
+          list=$(yq -N .name ${chartFiles} | xargs | jq -Rc 'split(" ")')
+          echo "chart list: ${list}"
+          echo "list=${list}" >> $GITHUB_OUTPUT
+
+  next-chart-version:
+    runs-on: ubuntu-latest
+    needs: [release-type, charts]
+    if: ${{ ! failure() && ! cancelled() && needs.charts.outputs.list != '' }}
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.charts.outputs.list) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      # NB: filter parsed commits to remove any commit whose scope concern another chart
+      - name: Commit Parser
+        id: commit-parser
+        run: |
+          filtered=$(echo "${{ needs.release-type.outputs.commits }}" | jq 'map(select(.scope == "${{ matrix.chart }}" or .scope == null))')
+          echo "filtered=${filtered}" >> $GITHUB_OUTPUT
+      # with default angular conventional commits, BREAKING CHANGE must be in footer
+      - name: Release Type
+        id: release-type
+        run: |
+          type=""
+          echo "${{ steps.commit-parser.outputs.filtered }}" | jq '.[] | .type' | grep fix && type=patch
+          echo "${{ steps.commit-parser.outputs.filtered }}" | jq '.[] | .type' | grep feat && type=minor
+          echo "${{ steps.commit-parser.outputs.filtered }}" | jq '.[] | .footer' | grep 'BREAKING CHANGE' && type=major
+          echo "release type: ${type}"
+          echo "type=${type}" >> $GITHUB_OUTPUT
+
+      # TODO : replace (by default will return patch even though there is no version bump to do)
+      # - name: Parse commit
+      #   uses: iam-medvedev/action-conventional-commit@v1
+      #   id: get-label
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Release type
+      #   run: echo "release type = ${{ steps.get-label.outputs.type }}"
+
+      # - name: Get latest version
+      #   uses: actions-ecosystem/action-get-latest-tag@v1
+      #   id: get-latest-tag
+      #   with:
+      #     semver_only: false
+      #     with_initial_version: true
+      #     initial_version: 0.1.0
+
+
+      # NB: previous tag format: <chart-name>-X.Y.Z
+      # fallback: 0.0.0
+      - name: Get Previous ${{ matrix.chart }} Tag
+        id: previous-tag
+        run: |
+          tag=$(git tag --sort=committerdate | grep ${{ matrix.chart }} | tail -1)
+          [[ "$tag" == "" ]] && tag=0.0.0 || :
+          echo "previous ${{ matrix.chart }} tag: ${tag}"
+          echo "tag=${tag}" >> $GITHUB_OUTPUT
+
+      # - name: Get Previous Tag
+      #   id: previous-tag
+      #   uses: "WyriHaximus/github-action-get-previous-tag@v1"
+      #   with:
+      #     fallback: 0.1.0
+
+      # - name: Get Prefix & Version From Previous Tag
+      #   id: previous
+      #   run: |
+      #     version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/[a-z_-]//g")
+      #     prefix=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${version}//g")
+      #     echo "previous prefix $prefix and version $version"
+      #     echo "version=${version}" >> $GITHUB_OUTPUT
+      #     echo "prefix=${prefix}" >> $GITHUB_OUTPUT
+
+      # - name: Update version
+      #   uses: actions-ecosystem/action-bump-semver@v1
+      #   id: bump-semver
+      #   with:
+      #     current_version: ${{ steps.previous.outputs.version }}
+      #     label: ${{ steps.get-label.outputs.type }}
+      # - name: Get Previous Tag
+      #   id: previous-tag
+      #   uses: "WyriHaximus/github-action-get-previous-tag@v1"
+      #   with:
+      #     fallback: 0.1.0
+
+      # - name: Get Prefix & PrevVersion
+      #   id: previous
+      #   run: |
+      #     version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/[a-z_-]//g")
+      #     prefix=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${version}//g")
+      #     echo "previous prefix $prefix and version $version"
+      #     echo "version=${version}" >> $GITHUB_OUTPUT
+      #     echo "prefix=${prefix}" >> $GITHUB_OUTPUT
+
+
+      # FROM the latest tag (being the chart, or not), retrieve commit messages
+      # - name: 📋 Get Commits since last Release
+      #   id: changes
+      #   uses: simbo/changes-since-last-release-action@v1
+      #   with:
+      #     line-prefix: ""
+      #     include-hashes: false
+
+      # https://git-scm.com/docs/git-log#_pretty_formats
+      # use a format direclty usable by commits-parser :
+      #  - %B raw commit including footer
+      #  - %n to add necessary new lines
+
+
+      # Get previous chart version
+      # prefix=$(echo ${{ steps.changes.outputs.last-tag }} | sed "s/${version}//g")
+      # nb: compatible with any of previous-tag output
+      - name: Get Previous ${{ matrix.chart }} Version
+        id: previous-version
+        run: |
+          version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${{ matrix.chart }}-//g")
+          echo "previous ${{ matrix.chart }} version: ${version}"
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+      - name: Prepare Next ${{ matrix.chart }} Version
+        id: semver-utils
+        uses: madhead/semver-utils@v3.1
+        with:
+          version: ${{ steps.previous-version.outputs.version }}
+
+      - name: Get Next ${{ matrix.chart }} Version
+        id: next-version
+        run: |
+          version=""
+          case "${{ steps.release-type.outputs.type }}" in
+            patch)
+              version=${{ steps.semver-utils.outputs.inc-patch }}
+              ;;
+            minor)
+              version=${{ steps.semver-utils.outputs.inc-minor }}
+              ;;
+            major)
+              version=${{ steps.semver-utils.outputs.inc-major }}
+              ;;
+            *)
+              version=${{ steps.previous-version.outputs.version }}
+              ;;
+          esac
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+        # uses: cloudposse/github-action-docker-build-push@1.9.0
+        # with:
+        #   registry: registry.hub.docker.com
+        #   organization: "${{ github.event.repository.owner.login }}"
+        #   repository: "${{ github.event.repository.name }}"
+        #   build-args: |-
+        #     PLATFORM=${{ matrix.platform }}
+
+      ## Write for matrix outputs workaround
+      - uses: cloudposse/github-action-matrix-outputs-write@main
+        id: out
+        with:
+          matrix-step-name: ${{ github.job }}
+          matrix-key: ${{ matrix.chart }}
+          outputs: |
+            version: ${{ steps.next-version.outputs.version }}
+
+  ## Read matrix outputs
+  read:
+    runs-on: ubuntu-latest
+    needs: [next-chart-version]
+    steps:
+      - uses: cloudposse/github-action-matrix-outputs-read@main
+        id: read
+        with:
+          matrix-step-name: next-chart-version
+    outputs:
+      result: "${{ steps.read.outputs.result }}"
+
+
+  commit-charts-version:
+    runs-on: ubuntu-latest
+    needs: [read]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Echo version result
+        run: |
+          echo "result:"
+          echo "${{ needs.read.outputs.result }}"
+      - name: Update Chart Version
+        run: |
+          charts=$(echo '${{ needs.read.outputs.result }}' | jq '.version | keys | join(" ")')
+          for chart in ${charts}; do
+            version=$(echo '${{ needs.read.outputs.result }}' | jq ".version.${chart}")
+            echo "Updating ${chart} to version ${version}"
+
+            file=charts/${chart}/Chart.yaml
+            sed -i "s/^version:.*$/version: ${version}/" ${file}
+          done
+
+      - name: Commit and push version update
+        uses: github-actions-x/commit@v2.9
+        with:
+          push-branch: main
+          name: "$GITHUB_ACTOR"
+          email: "$GITHUB_ACTOR@users.noreply.github.com"
+          force-add: 'true'
+          files: '**/Chart.yaml'
+          commit-message: 'chore: bump chart(s) version'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # key_matrix='${{ needs.read.outputs.result }}'
+
+
+      # keys=`echo $key_matrix | jq '.cache_key | to_entries | .[].value' --raw-output`
+      # for key in $keys; do
+      #   (gh actions-cache delete $key -R ${{ github.repository }} --confirm && echo "Deleted cache $key") \
+      #   || echo "Cache $key not found"
+      # done
+
+
+      # ${{ toJson(fromJson(needs.read.outputs.result).version) }} | jq "${chart}"
+
+      # for chart in $(echo "${{ fromJson(needs.charts.outputs.list) }}" | jq '.[]'); do 
+      #   echo "== Chart : ${chart}"
+
+      #   version=${{ fromJson(needs.read.outputs.result).version }}.${chart}
+      # done
+      # ${{ fromJson(needs.read.outputs.result).version }}

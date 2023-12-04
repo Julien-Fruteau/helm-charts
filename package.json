@@ -1,0 +1,9 @@
+{
+  "name": "helm-charts",
+  "devDependencies": {
+    "conventional-commits-parser": "^5.0.0"
+  },
+  "release": {
+    "branches": "main"
+  }
+}
