@@ -130,7 +130,7 @@ jobs:
           echo "chart list: ${list}"
           echo "list=${list}" >> $GITHUB_OUTPUT
 
-  build-chart-version:
+  next-chart-version:
     runs-on: ubuntu-latest
     needs: [release-type, charts]
     if: ${{ ! failure() && ! cancelled() && needs.charts.outputs.list != '' }}
@@ -185,7 +185,7 @@ jobs:
         run: |
           tag=$(git tag --sort=committerdate | grep ${{ matrix.chart }} | tail -1)
           [[ "$tag" == "" ]] && tag=0.0.0 || :
-          echo "previous tag for ${{ matrix.chart }}: ${tag}"
+          echo "previous ${{ matrix.chart }} tag: ${tag}"
           echo "tag=${tag}" >> $GITHUB_OUTPUT
 
       # - name: Get Previous Tag
@@ -246,7 +246,7 @@ jobs:
         id: previous-version
         run: |
           version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${{ matrix.chart }}-//g")
-          echo "previous chart ${{ matrix.chart }} version: ${version}"
+          echo "previous ${{ matrix.chart }} version: ${version}"
           echo "version=${version}" >> $GITHUB_OUTPUT
 
       - name: Prepare Next ${{ matrix.chart }} Version
@@ -259,7 +259,7 @@ jobs:
         id: next-version
         run: |
           version=""
-          case "${{ needs.release-type.outputs.type }}" in
+          case "${{ steps.release-type.outputs.type }}" in
             patch)
               version=${{ steps.semver-utils.outputs.inc-patch }}
               ;;
@@ -293,21 +293,21 @@ jobs:
             version: ${{ steps.next-version.outputs.version }}
 
   ## Read matrix outputs
-  read-charts-version:
+  read:
     runs-on: ubuntu-latest
-    needs: [build-chart-version]
+    needs: [next-chart-version]
     steps:
       - uses: cloudposse/github-action-matrix-outputs-read@main
         id: read
         with:
-          matrix-step-name: build-chart-version
+          matrix-step-name: next-chart-version
     outputs:
       result: "${{ steps.read.outputs.result }}"
 
 
   commit-charts-version:
     runs-on: ubuntu-latest
-    needs: [read-charts-version]
+    needs: [read]
     permissions:
       contents: write
     steps:
@@ -316,16 +316,16 @@ jobs:
       - name: Echo version result
         run: |
           echo "result:"
-          echo "${{ needs.read-charts-version.outputs.result }}"
-      - name: Update chart version
+          echo "${{ needs.read.outputs.result }}"
+      - name: Update Chart Version
         run: |
-          charts=$(echo '${{ needs.read-charts-version.outputs.result }}' | jq '.version | keys | join(" ")')
+          charts=$(echo '${{ needs.read.outputs.result }}' | jq '.version | keys | join(" ")')
           for chart in ${charts}; do
-            version=$(echo '${{ needs.read-charts-version.outputs.result }}' | jq ".version.${chart}")
-            echo "Updating Chart ${chart} to version ${version}"
+            version=$(echo '${{ needs.read.outputs.result }}' | jq ".version.${chart}")
+            echo "Updating ${chart} to version ${version}"
 
             file=charts/${chart}/Chart.yaml
-            sed -i "s/^version:.*$/version: ${version}" ${file}
+            sed -i "s/^version:.*$/version: ${version}/" ${file}
           done
 
       - name: Commit and push version update
@@ -336,10 +336,10 @@ jobs:
           email: "$GITHUB_ACTOR@users.noreply.github.com"
           force-add: 'true'
           files: '**/Chart.yaml'
-          commit-message: 'chore: bump charts version'
+          commit-message: 'chore: bump chart(s) version'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # key_matrix='${{ needs.read-charts-version.outputs.result }}'
+      # key_matrix='${{ needs.read.outputs.result }}'
 
 
       # keys=`echo $key_matrix | jq '.cache_key | to_entries | .[].value' --raw-output`
@@ -349,11 +349,11 @@ jobs:
       # done
 
 
-      # ${{ toJson(fromJson(needs.read-charts-version.outputs.result).version) }} | jq "${chart}"
+      # ${{ toJson(fromJson(needs.read.outputs.result).version) }} | jq "${chart}"
 
       # for chart in $(echo "${{ fromJson(needs.charts.outputs.list) }}" | jq '.[]'); do 
       #   echo "== Chart : ${chart}"
 
-      #   version=${{ fromJson(needs.read-charts-version.outputs.result).version }}.${chart}
+      #   version=${{ fromJson(needs.read.outputs.result).version }}.${chart}
       # done
-      # ${{ fromJson(needs.read-charts-version.outputs.result).version }}
+      # ${{ fromJson(needs.read.outputs.result).version }}
