@@ -1,5 +1,7 @@
 name: Prepare Release
 
+# This workflow is meant to be executed AFTER a PR has been closed and BEFORE the chart release workflow
+
 # if chart.yaml has not been modified there is a possible version bump to analyse and commit
 # prior calling chart-releaser (which uses Chart.yaml version)
 
@@ -13,20 +15,27 @@ name: Prepare Release
 
 # get the new chart version according to release type
 
-# for each chart, update Chart.yaml version, and commit new version
+# for each chart, update Chart.yaml version, single commit new version(s) and push
 
 
 # limitation:
 
-# in case multiple charts are updated, if one chart has been fix and another a has new feat
-# both charts would end up having a minor version upgrade
-# mitigation :
+# in case multiple charts are updated, if chart A has been fixed and another chart B a has new feat
+# both charts would end up having a minor version upgrade, whereas chart A should only be patched
+# How to mitigate :
 #  - do 1 PR for each chart
 #  OR
-#  - include the chart name in conventional commit scope "type(<scope>): blabla" ; ex
+#  - include the chart name in conventional commit scope "type(<scope>): message" ; ex
 #     - "fix(postgresql): default resources limit"
 #     - "feat(spring-boot): add liveness and readiness support"
-#     NB: step 'commit-parser' filters commit since previous release based on scope, either null or matching chart name
+
+#  NB: breaking changes are expected on git message footer
+#   if you are familiar with "type(<scope>)!: message" with an exclamation mark to trigger
+#   a breaking change, this is not supported (currently default angular conventional commit parser)
+
+# NOTES:
+# * This workflow is using : https://github.com/marketplace/actions/matrix-outputs-write
+# *   to fetch outputs from matrix jobs
 
 on:
   push:
@@ -35,17 +44,17 @@ on:
     paths:
       - 'charts/**'
       - '!charts/**/Chart.yaml'
-
-# * using : https://github.com/marketplace/actions/matrix-outputs-write
+defaults:
+  run:
+    shell: bash
 
 jobs:
   # Get the release type (patch, minor, major)
-  # how: computed from conventional commits since last release (tag).
-  #  NB: breaking changes are expected on footer (type(<scope>)!: ... is not supported) (exclamation mark)
+  # how: parsing conventional commits from latest release (tag).
   release-type:
     runs-on: ubuntu-latest
     outputs:
-      type: ${{ steps.get-release.outputs.type }}
+      type: ${{ steps.release-type.outputs.type }}
       commits: ${{ steps.commit-parser.outputs.parsed }}
     steps:
       - name: 📋 Get Commits Since Last Release
@@ -61,6 +70,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
+      - name: Install Dependencies
+        run: npm install
       - name: Commit Parser
         id: commit-parser
         run: |
@@ -73,7 +84,7 @@ jobs:
       # https://www.conventionalcommits.org/en/v1.0.0/
       # with default angular conventional commits, BREAKING CHANGE must be in footer
       - name: Release Type
-        id: get-release
+        id: release-type
         run: |
           type=""
           echo "${{ steps.commit-parser.outputs.parsed }}" | jq '.[] | .type' | grep fix && type=patch
@@ -82,10 +93,10 @@ jobs:
           echo "type=${type}" >> $GITHUB_OUTPUT
       - name: Which Release Type
         run: |
-          if [[ "${{ steps.get-release.outputs.type }}" == "" ]]; then
+          if [[ "${{ steps.release-type.outputs.type }}" == "" ]]; then
             echo "No release to make"
           else
-            echo "New release type: ${{ steps.get-release.outputs.type }}"
+            echo "New release type: ${{ steps.release-type.outputs.type }}"
           fi
 
   # Get the charts modified since previous release
@@ -107,15 +118,17 @@ jobs:
           DIFF_FILTER: AMR
           PATTERNS: |
             charts/**
-      # TODO: fix to parse corresponding Chart.yaml to extract name, which is the correct prefix pour tag release
+      - name: 'Setup yq'
+        uses: dcarbone/install-yq-action@v1.1.1
       - name: Charts Diff
         if: env.GIT_DIFF
         id: chart-list
         run: |
-          list=$(echo "env.GIT_DIFF" | cut -d/ -f2 | sort -u | xargs | jq -Rc 'split(" ")')
+          listChartDir=$(echo "env.GIT_DIFF" | cut -d/ -f2 | sort -u | xargs | jq -Rc 'split(" ")')
+          chartFiles=$(echo "env.GIT_DIFF" | cut -d/ -f2 | sort -u | xargs -I {} echo charts/{}/Chart.yaml)
+          list=$(yq -N .name ${chartFiles} | xargs | jq -Rc 'split(" ")')
           echo "chart list: ${list}"
           echo "list=${list}" >> $GITHUB_OUTPUT
-
 
   build-chart-version:
     runs-on: ubuntu-latest
@@ -137,7 +150,7 @@ jobs:
           echo "filtered=${filtered}" >> $GITHUB_OUTPUT
       # with default angular conventional commits, BREAKING CHANGE must be in footer
       - name: Release Type
-        id: get-release
+        id: release-type
         run: |
           type=""
           echo "${{ steps.commit-parser.outputs.filtered }}" | jq '.[] | .type' | grep fix && type=patch
@@ -183,7 +196,6 @@ jobs:
 
       # - name: Get Prefix & Version From Previous Tag
       #   id: previous
-      #   shell: bash
       #   run: |
       #     version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/[a-z_-]//g")
       #     prefix=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${version}//g")
@@ -205,7 +217,6 @@ jobs:
 
       # - name: Get Prefix & PrevVersion
       #   id: previous
-      #   shell: bash
       #   run: |
       #     version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/[a-z_-]//g")
       #     prefix=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${version}//g")
@@ -233,7 +244,6 @@ jobs:
       # nb: compatible with any of previous-tag output
       - name: Get Previous ${{ matrix.chart }} Version
         id: previous-version
-        shell: bash
         run: |
           version=$(echo ${{ steps.previous-tag.outputs.tag }} | sed "s/${{ matrix.chart }}-//g")
           echo "previous chart ${{ matrix.chart }} version: ${version}"
@@ -304,12 +314,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Echo version result
-        shell: bash
         run: |
           echo "result:"
           echo "${{ needs.read-charts-version.outputs.result }}"
       - name: Update chart version
-        shell: bash
         run: |
           charts=$(echo '${{ needs.read-charts-version.outputs.result }}' | jq '.version | keys | join(" ")')
           for chart in ${charts}; do
